@@ -7,11 +7,11 @@
 </head>
 <body>
 <h1>VLESS over WebSocket Tester</h1>
-<p>本頁只在瀏覽器內執行測試，UUID 與網域只填在欄位中，不會儲存或上傳。</p>
+<p>本頁只在瀏覽器內執行測試，UUID 與網域只填在欄位中，不會儲存或上傳。目標站台使用明文 HTTP（連接埠 80），因為瀏覽器無法在代理通道內另建 TLS 連線。</p>
 <label>節點網域 <input id="domain" value="cloady-xray-cwv7iw6c-workspace-n6wokf.cloady.io"></label>
 <label>UUID <input id="uuid" placeholder="xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"></label>
 <label>WS 路徑 <input id="path" value="/xray"></label>
-<button id="btnIp">測試 1：ipinfo.io（出口 IP 與國家）</button>
+<button id="btnIp">測試 1：ip-api.com（出口 IP 與國家）</button>
 <button id="btnEx">測試 2：example.com（海外頁面）</button>
 <pre id="log">就緒。</pre>
 <script>
@@ -107,12 +107,12 @@ function testOnce(host, port, req){
   });
 }
 $('btnIp').onclick = function(){
-  $('log').textContent = '開始測試 ipinfo.io ...';
-  testOnce('ipinfo.io', 443, 'GET /json HTTP/1.0' + CRLF + 'Host: ipinfo.io' + CRLF + CRLF).then(function(r){ log(r); });
+  $('log').textContent = '開始測試 ip-api.com ...';
+  testOnce('ip-api.com', 80, 'GET /json HTTP/1.0' + CRLF + 'Host: ip-api.com' + CRLF + CRLF).then(function(r){ log(r); });
 };
 $('btnEx').onclick = function(){
   $('log').textContent = '開始測試 example.com ...';
-  testOnce('example.com', 443, 'GET / HTTP/1.0' + CRLF + 'Host: example.com' + CRLF + CRLF).then(function(r){ log(r); });
+  testOnce('example.com', 80, 'GET / HTTP/1.0' + CRLF + 'Host: example.com' + CRLF + CRLF).then(function(r){ log(r); });
 };
 </script>
 </body>
