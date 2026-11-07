@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>VLESS over WebSocket Tester</title>
+<style>body{font-family:system-ui,sans-serif;max-width:760px;margin:2em auto;padding:0 1em}input{width:100%;padding:6px;margin:4px 0}button{padding:8px 16px;margin:6px 4px 6px 0}pre{background:#111;color:#0f0;padding:12px;white-space:pre-wrap;word-break:break-word}</style>
+</head>
+<body>
+<h1>VLESS over WebSocket Tester</h1>
+<p>本頁只在瀏覽器內執行測試，UUID 與網域只填在欄位中，不會儲存或上傳。</p>
+<label>節點網域 <input id="domain" value="cloady-xray-cwv7iw6c-workspace-n6wokf.cloady.io"></label>
+<label>UUID <input id="uuid" placeholder="xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"></label>
+<label>WS 路徑 <input id="path" value="/xray"></label>
+<button id="btnIp">測試 1：ipinfo.io（出口 IP 與國家）</button>
+<button id="btnEx">測試 2：example.com（海外頁面）</button>
+<pre id="log">就緒。</pre>
+<script>
+var CRLF = String.fromCharCode(13, 10);
+var NL = String.fromCharCode(10);
+function $(id){ return document.getElementById(id); }
+function log(m){ $('log').textContent += NL + m; }
+function uuidBytes(s){
+  var h = s.replace(/-/g, '');
+  if(h.length !== 32){ throw new Error('UUID 格式錯誤'); }
+  var b = new Uint8Array(16);
+  for(var i = 0; i < 16; i++){ b[i] = parseInt(h.substr(i * 2, 2), 16); }
+  return b;
+}
+function vlessHeader(uuid, host, port){
+  var ub = uuidBytes(uuid);
+  var hb = new TextEncoder().encode(host);
+  var out = new Uint8Array(1 + 16 + 1 + 1 + 2 + 1 + 1 + hb.length);
+  var o = 0;
+  out[o++] = 0;
+  out.set(ub, o); o += 16;
+  out[o++] = 0;
+  out[o++] = 1;
+  out[o++] = (port >> 8) & 255; out[o++] = port & 255;
+  out[o++] = 2;
+  out[o++] = hb.length;
+  out.set(hb, o);
+  return out;
+}
+function contentLengthOf(head){
+  var lh = head.toLowerCase();
+  var ci = lh.indexOf('content-length:');
+  if(ci < 0){ return -1; }
+  var s = ci + 15;
+  var num = '';
+  while(s < lh.length && lh[s] >= '0' && lh[s] <= '9'){ num += lh[s]; s++; }
+  return parseInt(num, 10);
+}
+function testOnce(host, port, req){
+  return new Promise(function(resolve){
+    var domain = $('domain').value.trim();
+    var path = $('path').value.trim() || '/xray';
+    var chunks = [];
+    var done = false;
+    function finish(msg){ if(!done){ done = true; resolve(msg); } }
+    function allText(){
+      var total = 0;
+      for(var i = 0; i < chunks.length; i++){ total += chunks[i].byteLength; }
+      var buf = new Uint8Array(total);
+      var o = 0;
+      for(var j = 0; j < chunks.length; j++){ buf.set(chunks[j], o); o += chunks[j].byteLength; }
+      if(total <= 2){ return ''; }
+      return new TextDecoder().decode(buf.slice(2));
+    }
+    var ws;
+    try{ ws = new WebSocket('wss://' + domain + path); }
+    catch(e){ finish('WebSocket 建立失敗：' + e.message); return; }
+    ws.binaryType = 'arraybuffer';
+    var timer = setTimeout(function(){
+      try{ ws.close(); }catch(e){}
+      finish('逾時（15 秒）未收到完整回應；已收到段數：' + chunks.length);
+    }, 15000);
+    ws.onopen = function(){
+      log('WebSocket 已連線到 wss://' + domain + path);
+      try{
+        ws.send(vlessHeader($('uuid').value.trim(), host, port));
+        ws.send(new TextEncoder().encode(req));
+        log('已送出 VLESS 標頭與 HTTP 請求到 ' + host + ':' + port);
+      }catch(e){ clearTimeout(timer); finish('送出失敗：' + e.message); }
+    };
+    ws.onmessage = function(ev){
+      chunks.push(new Uint8Array(ev.data));
+      var text = allText();
+      var hEnd = text.indexOf(CRLF + CRLF);
+      if(hEnd < 0){ return; }
+      var need = contentLengthOf(text.slice(0, hEnd));
+      if(need >= 0 && text.length >= hEnd + 4 + need){
+        clearTimeout(timer);
+        try{ ws.close(); }catch(e){}
+        finish('HTTP 回應（透過節點取得）：' + NL + text);
+      }
+    };
+    ws.onerror = function(){
+      clearTimeout(timer);
+      finish('WebSocket 錯誤：連線失敗或被伺服器拒絕（請檢查網域、路徑與 UUID）');
+    };
+    ws.onclose = function(){
+      clearTimeout(timer);
+      var text = allText();
+      if(!text){ finish('WebSocket 已關閉，未收到任何資料'); return; }
+      finish('WebSocket 已關閉，收到原始回應：' + NL + text);
+    };
+  });
+}
+$('btnIp').onclick = function(){
+  $('log').textContent = '開始測試 ipinfo.io ...';
+  testOnce('ipinfo.io', 443, 'GET /json HTTP/1.0' + CRLF + 'Host: ipinfo.io' + CRLF + CRLF).then(function(r){ log(r); });
+};
+$('btnEx').onclick = function(){
+  $('log').textContent = '開始測試 example.com ...';
+  testOnce('example.com', 443, 'GET / HTTP/1.0' + CRLF + 'Host: example.com' + CRLF + CRLF).then(function(r){ log(r); });
+};
+</script>
+</body>
+</html>
